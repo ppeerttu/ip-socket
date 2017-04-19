@@ -2,11 +2,42 @@
 
 import socket
 
+class udpsocket:
+    'Used for sending UDP datagrams'
+
+    def __init__(self, sock=None):
+        if sock is None:
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        else:
+            self.sock = sock
+
+
+class tcpsocket:
+    'Used for the first transmission via TCP'
+
+    def __init__(self, sock=None):
+        if sock is None:
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        else:
+            self.sock = sock
+
+    def connect(self, host, port):
+        self.sock.connect((host,port))
+
+    def send(self, msg):
+        self.socket.send(msg)
+
+    def myreceive(self):
+        chunk = ws.recv(2048)
+        if chunk == '':
+            print "Message ended"
+            break;
+        chunks.append(chunk)
+        print ("Received ", chunks)
+        
 
 
 
-
-ws = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 address = "ii.virtues.fi"
 port = 10000
