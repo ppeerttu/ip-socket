@@ -7,7 +7,7 @@ class UdpSocket:
     'Used for sending UDP datagrams'
 
     # Constructor - this function initializes the socket object
-    Def __init__(self, cid, sock=None):
+    def __init__(self, cid, sock=None):
         if sock is None:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         else:
@@ -45,7 +45,7 @@ class UdpSocket:
         # Unpack the raw data into understantable form
         try:
             print data
-            #cid, ack, eom, remaining, length, message = struct.unpack('!8s??HH64s', data)
+            cid, ack, eom, remaining, length, message = struct.unpack('!8s??HH64s', data)
         except Exception as e:
             print e
         
