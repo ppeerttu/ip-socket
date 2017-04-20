@@ -2,6 +2,7 @@
 
 import socket
 import struct
+import random
 
 class UdpSocket:
     'Used for sending UDP datagrams'
@@ -20,7 +21,7 @@ class UdpSocket:
 
     # This mehtod sends the message it gets as a parameter to ii.virtues.fi:23432
     # However, static receiver must be replaced with dynamic receiver i.e. in __init__ method
-    def send(self, message):
+    def send(self, message, key):
         
         # Calculate the length of the actual message in bytes
         length = len(message)
@@ -28,7 +29,8 @@ class UdpSocket:
         # Add null characters until the full length of the message is 64 bytes
         for n in range(64 - length):
             message += '\0'
-        
+
+        message = self.encrypt(message, key)
         # Udp headers - when adding features, all of these three must be modified regarding the state of the communication
         ack = True
         eom = False
@@ -37,6 +39,12 @@ class UdpSocket:
         # Pack the data into raw format and send it to the receiver
         data = struct.pack('!8s??HH64s', cid, ack, eom, remaining, length, message)
         self.sock.sendto(data, ("ii.virtues.fi", 23432))
+
+    def encrypt(self, message, key):
+        crypted = ""
+        for n in range(len(message)):
+            crypted += chr(ord(message[n]) ^ ord(key[n]))
+        return crypted
 
     def receive(self):
         # Listen to socket max 2048 bytes - this should propably be implemented in better way later
@@ -103,43 +111,94 @@ def parse_to_string(list):
             newstr += " "
     return newstr
 
+    
+
+# Generating one encryption key of 64 bytes
+def generate_encrypt_key():
+    characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
+    key = ""
+    for n in range(64):
+        key += characters[random.randint(0, len(characters) - 1)]
+    return key
+
+
+def decrypt(message, key):
+    decrypted = ""
+    for n in range (len(message)):
+        decrypted += chr(ord(message[n]) ^ ord(key[n]))
+    return decrypted
+
 # For developement purposes address and port hardcoded
 address = "ii.virtues.fi"
 tcpPort = 10000
+keys_generated = []
 
 # Creating an instance of TCP Socket, connecting it to the server and sending a message
 tsocket = TcpSocket()
 tsocket.connect(address, tcpPort)
-tsocket.send("HELLO\r\n")
+tsocket.send("HELLO ENC\r\n")
 
-# Catching and printing the response from TCP Socket
+for n in range(20):
+        key = generate_encrypt_key()
+        keys_generated.append(key)
+        key += "\r\n"
+        tsocket.send(key)
+tsocket.send(".\r\n")
+
+# Catching and printing the response from TCP Socket (includes cid, port, and encryption keys)
 received = tsocket.receive()
-print "Received: ", received
 
-# Taking the necessary parameters out of the message (cid and UDP port)
-msg, cid, udpPort = received.split()
-print msg
-print cid
-print udpPort
+
+# Taking the necessary parameters and keys out of the message
+keys_received = []
+keys_received = received.split()
+
+cid = keys_received[1]
+port = keys_received[2]
+message = keys_received[0]
+
+# Remove cid, port etc to leave only the encryption keys to the list
+keys_received.remove(message)
+keys_received.remove(port)
+keys_received.remove(cid)
+keys_received.remove(".")
+
+print keys_received
+print "Length: ", len(keys_received)
+
+
+
 
 # Now we can create an instance of UDP Socket
 # Note that at this point we should input the UDP port to the socket - at the moment it is hardcoded
 usocket = UdpSocket(cid)
 
 try:
+    # Sending the first message and deleting the first generated encrypt key right after
+    print "Try -block"
     hellomsg = "Hello from "
     hellomsg += cid
-    usocket.send(hellomsg)
+    usocket.send(hellomsg, keys_generated[0])
+    keys_generated.remove(keys_generated[0])
+    
+    # Loop: 1. Receiving (encrypted) message
+    # 2. Checking whether or not the message will be the last one - if yes, no need for decryption, just print the message and break
+    # 3. Decrypting the message and deleting the used decryption key
+    # 4. Reversing the message and encrypting it back
+    # 5. Sending the message back and removing the encryption key
     while True:
         message, eof = usocket.receive()
-        print "Eof: ", eof
         if eof:
             print "Last message: ", message
             break
-        else:
-            revmsg = reverse_message(message)
-            print "New message to be sent: ", revmsg
-            usocket.send(revmsg)
+        print "Encrypted: ", message
+        message = decrypt(message, keys_received[0])
+        keys_received.remove(keys_received[0])
+        print "Decrypted: ", message
+        revmsg = reverse_message(message)
+        print "New message to be sent: ", revmsg
+        usocket.send(revmsg, keys_generated[0])
+        keys_generated.remove(keys_generated[0])
 
 except Exception as e:
     print "Something is wrong with your class: ", e
