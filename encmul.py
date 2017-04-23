@@ -18,7 +18,7 @@ class UdpSocket:
         self.keys_received = keys_received
 
 
-    # This method sends the message it gets as a parameter to ii.virtues.fi:23432
+    # This mehtod sends the message it gets as a parameter to ii.virtues.fi:23432
     # However, static receiver must be replaced with dynamic receiver i.e. in __init__ method
     def send(self, message, ack):
         
@@ -51,13 +51,11 @@ class UdpSocket:
             print "Self-generated keys remaining: ", len(self.keys_generated)
             remaining = length
 
-            partialmsg = self.parity_message(partialmsg)
-            checkpar, x = self.check_parity(partialmsg)
-            print "Parity completed successfully: ", checkpar
+            #partialmsg = self.parity_message(partialmsg)
+            #checkpar, x = self.check_parity(partialmsg)
+            #print "Parity completed successfully: ", checkpar
             # Pack the data into raw format and send it to the receiver
             # Headers size 8 + 1 + 1 + 2 + 2 = 14 bytes
-            testnum = random.randint(0, partiallen - 1)
-            print "Random char from the leaving message: ", bin(ord(partialmsg[testnum]))
             data = struct.pack('!8s??HH64s', cid, ack, eom, remaining, partiallen, partialmsg)
             self.sock.sendto(data, ("ii.virtues.fi", 23432))
             print "Remaining: ", remaining
@@ -86,10 +84,9 @@ class UdpSocket:
             # The last message from the server (EOM) has no parity nor encryption
             if eom:
                 return (partialmessage, eom)
-            testnum = random.randint(0, length - 1)
-            print "Random char from the received message: ", bin(ord(partialmessage[testnum]))
-            correctparity, partialmessage = self.check_parity(partialmessage)
-            #correctparity = True
+            
+            #correctparity, partialmessage = self.check_parity(partialmessage)
+            correctparity = True
             if not correctparity:
                 print "Parity incorrect!"
                 self.send("Send again", False)
@@ -210,7 +207,7 @@ keys_generated = []
 # Creating an instance of TCP Socket, connecting it to the server and sending a message
 tsocket = TcpSocket()
 tsocket.connect(address, tcpPort)
-tsocket.send("HELLO ENC PAR MUL\r\n")
+tsocket.send("HELLO ENC MUL\r\n")
 
 for n in range(20):
         key = generate_encrypt_key()
