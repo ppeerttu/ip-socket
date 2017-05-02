@@ -9,29 +9,29 @@ class UdpSocket:
 
     # Constructor - this method initializes the socket object
     # Socket gets both self generated encrypt keys and received encrypt keys
-    def __init__(self, ip, port, cid, keys_generated, keys_received, sock=None):
+    def __init__(self, ip, port, cid, sock=None):
         if sock is None:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         else:
             self.sock = sock
         self.cid = cid
-        self.keys_generated = keys_generated
-        self.keys_received = keys_received
         self.port = port
         self.ip = ip
 
 
-    # This method sends the message it gets as a parameter
+    # This method sends the message it gets as a parameter to ii.virtues.fi:23432
+    # However, static receiver must be replaced with dynamic receiver i.e. in __init__ method
     def send(self, message, ack):
-        print "Sending!\n"
         
         # Calculate the length of the actual message in bytes
         length = len(message)
+        print "Length of the whole message: ", length
         
         # Enter into sending loop - necessary for multipart messages
         while True:
             partialmsg = ""
             partiallen = 0
+            ack = ack
             eom = False
             # Dealing with the message length (if over 64 bytes we gotta slice it up)
             if length > 64:
@@ -43,25 +43,30 @@ class UdpSocket:
                 partialmsg = message
                 partiallen = len(partialmsg)
                 length -= partiallen
+            print "Length of remaining message: ", length
             
             # Add null characters until the full length of the message is 64 bytes
             for n in range(64 - partiallen):
                 partialmsg += '\0'
 
             # Ecnrypt the message and remove the used key from self-generated key list
-            partialmsg = self.encrypt(partialmsg, self.keys_generated[0])
-            self.keys_generated.remove(self.keys_generated[0])
-            remaining_keys = len(self.keys_generated)
-
+            #partialmsg = self.encrypt(partialmsg, self.keys_generated[0])
+            #self.keys_generated.remove(self.keys_generated[0])
+            #print "Self-generated keys remaining: ", len(self.keys_generated)
             remaining = length
             
             # Parity the encrypted message
             partialmsg = self.parity_message(partialmsg)
+            checkpar, x = self.check_parity(partialmsg)
+            print "Parity completed successfully: ", checkpar
 
+            #testnum = random.randint(0, partiallen - 1)
+            #print "Random char from the leaving message: ", bin(ord(partialmsg[testnum]))
             # Pack the data into raw format and send it to the receiver
             # Headers size 8 + 1 + 1 + 2 + 2 = 14 bytes
             data = struct.pack('!8s??HH64s', cid, ack, eom, remaining, partiallen, partialmsg)
             self.sock.sendto(data, (self.ip, self.port))
+            print "Remaining: ", remaining
             if remaining == 0:
                 break
 
@@ -73,47 +78,40 @@ class UdpSocket:
 
     def receive(self):
         message = ""
-        print "Data incoming!"
         while True:
             # Listen to socket max 78 bytes - 64 + 14 (headers)
             data = self.sock.recvfrom(78)
-            # Unpack the raw data into understandable form
+            print "Data: ", data
+            # Unpack the raw data into understantable form
             # Header size 14 bytes
             cid, ack, eom, remaining, length, partialmessage = struct.unpack('!8s??HH64s', data[0])
             partialmessage = partialmessage[:length]
+            print "Received length: ", length
+            print "Received remaining: ", remaining
 
-            message = message + partialmessage
-            if remaining == 0:
-                break
+            # The last message from the server (EOM) has no parity nor encryption
+            if eom:
+                return (partialmessage, eom)
+            testnum = random.randint(0, length - 1)
+            print "Random char from the received message: ", bin(ord(partialmessage[testnum]))
+            correctparity, partialmessage = self.check_parity(partialmessage)
+            #correctparity = True
+            if not correctparity:
+                print "Parity incorrect!"
+                self.send("Send again", False)
+                #self.keys_received.remove(self.keys_received[0])
+            else:
+                #partialmessage = self.decrypt(partialmessage, self.keys_received[0])
+                #self.keys_received.remove(self.keys_received[0])
+                message = message + partialmessage
+                if remaining == 0:
+                    print "The whole message: ", message
+                    return (message, eom)
 
-        # The last message from the server (EOM) has no parity nor encryption
-        if eom:
-            return (message, eom, True)
-
-        correctparity, message = self.check_parity(message)
-        message = self.decrypt(message)
-
-        #correctparity = True
-        if not correctparity:
-            print "Parity incorrect!"
-            return ("Send again", eom, False)
-        else:
-            print "The whole, decrypted message: ", message
-            return (message, eom, True)
-
-
-    def decrypt(self, rec_message):
-        key = self.keys_received[0]
-        self.keys_received.remove(self.keys_received[0])
-        if len(rec_message) > 64:
-            key = key + self.keys_received[0]
-            self.keys_received.remove(self.keys_received[0])
-        if len(rec_message) > 128:
-            key = key + self.keys_received[0]
-            self.keys_received.remove(self.keys_received[0])
+    def decrypt(self, message, key):
         decrypted = ""
-        for n in range (len(rec_message)):
-            decrypted += chr(ord(rec_message[n]) ^ ord(key[n]))
+        for n in range (len(message)):
+            decrypted += chr(ord(message[n]) ^ ord(key[n]))
         return decrypted
 
     def get_parity(self, char):
@@ -123,23 +121,24 @@ class UdpSocket:
 
     def check_parity(self, message):
         unparity = ""
-        pass_parity = True
         for n in range(len(message)):
             x = ord(message[n])
             paritybit = x & 1
             x >>= 1
             unparity += chr(x)
             if not paritybit == self.get_parity(x):
-                pass_parity = False
-        return (pass_parity, unparity)
+                return (False, unparity)
+        return (True, unparity)
 
 
     def parity_message(self, message):
         paritymessage = ""
         for n in message:
             x = ord(n)
+            #print "Before: ", bin(x)
             x <<= 1
             x += self.get_parity(x)
+            #print "After: ", bin(x)
             paritymessage += chr(x)
 
         return paritymessage
@@ -207,24 +206,25 @@ def generate_encrypt_key():
     return key
 
 
-print "Data you're brobably looking for: ii.virtues.fi:10000"
 
-# Ask for address
-address = raw_input("Give some address to connect: ")
-tcpPort = int(raw_input("In which port: "))
+
+# For developement purposes address and port hardcoded
+address = "ii.virtues.fi"
+tcpPort = 10000
 keys_generated = []
 
 # Creating an instance of TCP Socket, connecting it to the server and sending a message
 tsocket = TcpSocket()
 tsocket.connect(address, tcpPort)
-tsocket.send("HELLO ENC MUL PAR\r\n")
+tsocket.send("HELLO MUL PAR\r\n")
 
-for n in range(20):
-        key = generate_encrypt_key()
-        keys_generated.append(key)
-        key += "\r\n"
-        tsocket.send(key)
-tsocket.send(".\r\n")
+#for n in range(20):
+#        key = generate_encrypt_key()
+#        print key
+#        keys_generated.append(key)
+#        key += "\r\n"
+#        tsocket.send(key)
+#tsocket.send(".\r\n")
 
 # Catching and printing the response from TCP Socket (includes cid, port, and encryption keys)
 received = tsocket.receive()
@@ -239,45 +239,49 @@ port = int(keys_received[2])
 message = keys_received[0]
 
 # Remove cid, port etc to leave only the encryption keys to the list
-keys_received.remove(message)
-keys_received.remove(str(port))
-keys_received.remove(cid)
-keys_received.remove(".")
+#keys_received.remove(message)
+#keys_received.remove(str(port))
+#keys_received.remove(cid)
+#keys_received.remove(".")
 
+print keys_received
+#print "Length: ", len(keys_received)
 
 
 
 
 # Now we can create an instance of UDP Socket
 # Note that at this point we should input the UDP port to the socket - at the moment it is hardcoded
-usocket = UdpSocket(address, port, cid, keys_generated, keys_received)
+usocket = UdpSocket(address, port, cid)
 
 
 
-
-# Sending the first message
-hellomsg = "Hello from "
-hellomsg += cid
-usocket.send(hellomsg, True)
+try:
+    # Sending the first message
+    print "Try -block"
+    hellomsg = "Hello from "
+    hellomsg += cid
+    usocket.send(hellomsg, True)
     
     # Loop: 1. Receiving (encrypted) message
     # 2. Checking whether or not the message will be the last one - if yes, no need for decryption, just print the message and break
     # 3. Decrypting the message and deleting the used decryption key
     # 4. Reversing the message and encrypting it back
     # 5. Sending the message back and removing the encryption key
-while True:
-    message, eom, parity = usocket.receive()
-    if eom:
-        print "Last message: ", message
-        break
-    elif parity == False:
-        usocket.send(message, False)
-    else:
+    while True:
+        message, eom = usocket.receive()
+        if eom:
+            print "Last message: ", message
+            break
+
         revmsg = reverse_message(message)
         print "New message to be sent: ", revmsg
         usocket.send(revmsg, True)
 
+except Exception as e:
+    print "Something is wrong with your class: ", e
 
-tsocket.close()
-print "Closing..."
+finally:
+    tsocket.close()
+    print "Closing..."
     
